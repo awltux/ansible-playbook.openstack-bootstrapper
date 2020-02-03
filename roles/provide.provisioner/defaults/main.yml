@@ -1,6 +1,7 @@
 ---
 
-ironic_standalone_git_url: "https://github.com/hogepodge/symmetrical-memory.git"
+#ironic_standalone_git_url: "https://github.com/hogepodge/symmetrical-memory.git"
+ironic_standalone_git_url: "https://github.com/awltux/symmetrical-memory.git"
 ironic_standalone_git_dir: "/tmp/ironic_standalone"
 
 ipmi_interface: eno1
