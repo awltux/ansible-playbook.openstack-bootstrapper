@@ -1,0 +1,15 @@
+---
+
+ironic_standalone_git_url: "https://github.com/hogepodge/symmetrical-memory.git"
+ironic_standalone_git_dir: "/tmp/ironic_standalone"
+
+ipmi_interface: eno1
+data_interface: enp0s20f0u4
+ipmi_range: "192.168.20.10,192.168.20.20,12h"
+data_range: "192.168.30.10,192.168.30.20,12h"
+boot_ipxe_ip: "192.168.30.1"
+boot_ipxe_port: "8080"
+boot_ipxe_endpoint: "http://{{ boot_ipxe_ip }}:{{ boot_ipxe_port }}/boot.ipxe"
+dnsmasq_additional: "dhcp-host=0c:c4:7a:ca:3a:3e,192.168.20.11 \
+                     dhcp-host=0c:c4:7a:ca:3a:4b,192.168.20.12 \
+                     dhcp-host=0c:c4:7a:9a:3c:64,192.168.20.13"

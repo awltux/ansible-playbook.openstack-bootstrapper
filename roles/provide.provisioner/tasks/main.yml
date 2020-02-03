@@ -1,0 +1,87 @@
+---
+
+- name: Set ansible_user to current USER
+  set_fact: 
+    ansible_user: "{{ lookup('env', 'USER') }}"
+  
+- name: "Install packages for install"
+  yum:
+    name: 
+      - 'epel-release'
+      - 'python-pip'
+      - 'python-devel'
+      - 'libffi-devel'
+      - 'gcc'
+      - 'openssl-devel'
+      - 'ntp'
+      - 'python-virtualenv'
+      - 'python-netaddr'
+      - 'screen'
+      - 'git'
+    state: latest
+
+# Should be enabled
+- name: "[FIXME] Stop and disable the firewalld service"
+  service:
+    name: firewalld
+    state: stopped
+    enabled: no
+
+- name: "Start and enable the ntpd service"
+  service:
+    name: ntpd
+    state: started
+    enabled: yes
+
+# Should be enabled
+- name: "[FIXME] Put SELinux in permissive mode, logging actions that would be blocked."
+  selinux:
+    policy: targeted
+    state: permissive
+    
+- name: "upgrade all packages except kernel"
+  yum:
+    name: '*'
+    state: latest
+    exclude: kernel*
+
+- name: "upgrade kernel"
+  yum:
+    name: 'kernel*'
+    state: latest
+  register: kernel_upgrade
+  
+- name: "Download docker install script"
+  get_url:
+    url: https://get.docker.io
+    dest: /tmp/docker_install.sh
+    validate_certs: no
+    mode: '0700'
+
+- name: "Install Docker"
+  shell: 
+    cmd: "./docker_install.sh | tee /var/log/docker_install.log"
+    chdir: "/tmp"
+    executable: "/bin/bash"
+
+- name: "Add user '{{ ansible_user }}' to docker group"
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+
+- name: "Start and enable docker service"
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: "Stop for reboot if updates applied"
+  when: 
+    - kernel_upgrade is changed
+  fail:
+    msg: "Kernel upgraded: Restart host to pick up new kernel"
+
+- name: "INCLUDE_TASK: Standalone Ironic containers"
+  include_tasks:
+    file: "ironic-containers.yml"

@@ -1,0 +1,181 @@
+---
+
+- name: "Install python dependancies for docker (uses python 2.6)"
+  pip:
+    name: docker-py
+
+- name: Clone the project to build the standalone ironic docker containers
+  git:
+    repo: "{{ ironic_standalone_git_url }}"
+    dest: "{{ ironic_standalone_git_dir }}"
+
+- name: Build docker images
+  docker_image:
+    build:
+      pull: yes
+      path: "{{ ironic_standalone_git_dir }}/docker/{{ item }}"
+    name: "slab_{{ item }}"
+    tag: "latest"
+    source: build
+  loop:
+    - dnsmasq
+    - tftp
+    - imagedata
+    - nginx
+    - ironic_base
+    - ironic_api
+    - ironic_conductor
+    - ironic_dbsync
+    - test
+    - dib
+
+- name: Configure install
+  ini_file:
+    path: "{{ ironic_standalone_git_dir }}/docker/config"
+    section: null
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+  loop:
+    - option: "RABBITMQ_DEFAULT_PASS"
+      value: "{{ vault_rabbitmq_default_password }}"
+    - option: "MYSQL_IRONIC_PASSWORD"
+      value: "{{ vault_mysql_ironic_password }}"
+    - option: "MYSQL_ROOT_PASSWORD"
+      value: "{{ vault_mysql_root_password }}"
+    - option: "IPMI_INTERFACE"
+      value: "{{ ipmi_interface }}"
+    - option: "DATA_INTERFACE"
+      value: "{{ data_interface }}"
+    - option: "IPMI_RANGE"
+      value: "{{ ipmi_range }}"
+    - option: "DATA_RANGE"
+      value: "{{ data_range }}"
+    - option: "BOOT_IPXE_ENDPOINT"
+      value: "{{ boot_ipxe_endpoint }}"
+    - option: "DNSMASQ_ADDITIONAL"
+      value: "{{ dnsmasq_additional }}"
+
+- name: Create slab_rabbit container
+  docker_container:
+    env_file: "{{ ironic_standalone_git_dir }}/docker/config"
+    name: slab_rabbit
+    hostname: slab_rabbit
+    image: "rabbitmq:3"
+    
+- name: Create a volume
+  docker_volume:
+    name: slab_database
+
+- name: Create a data container
+  docker_container:
+    env_file: "{{ ironic_standalone_git_dir }}/docker/config"
+    name: slab_mariadb
+    hostname: slab_mariadb
+    image: "mariadb:10.1.22"
+    mounts:
+      type: volume
+      target: '/var/lib/mysql'
+      source: 'slab_database'
+
+- name: Create a volume slab_imagedata
+  docker_volume:
+    name: slab_imagedata
+
+- name: Create a data container
+  docker_container:
+    name: slab_imagedata
+    hostname: slab_imagedata
+    image: "slab_imagedata"
+    interactive: yes
+    tty: yes
+    detach: no
+    cleanup: yes
+    auto_remove: true
+    mounts:
+      type: volume
+      target: '/imagedata'
+      source: 'slab_imagedata'
+    
+- name: Create container slab_tftp
+  docker_container:
+    name: slab_tftp
+    hostname: slab_tftp
+    image: "slab_tftp"
+    cleanup: yes
+    auto_remove: true
+    ports: "69:69/udp"
+    mounts:
+      type: volume
+      target: '/imagedata'
+      source: 'slab_imagedata'
+    
+- name: Create container slab_nginx
+  docker_container:
+    name: slab_nginx
+    hostname: slab_nginx
+    image: "slab_nginx"
+    cleanup: yes
+    auto_remove: true
+    ports: "8080:8080"
+    mounts:
+      type: volume
+      target: '/imagedata'
+      source: 'slab_imagedata'
+    
+- name: Create container slab_dnsmasq
+  docker_container:
+    name: slab_dnsmasq
+    hostname: slab_dnsmasq
+    image: "slab_dnsmasq"
+    env_file: "{{ ironic_standalone_git_dir }}/docker/config"
+    cleanup: yes
+    auto_remove: true
+    capabilities: 'NET_ADMIN'
+    networks:
+      name: 'host'
+    ports: 
+      - "53:53"
+      - "53:53/udp"
+    mounts:
+      type: bind
+      source: '{{ ironic_standalone_git_dir }}/docker/dnsmasq_config'
+      target: '/etc/dnsmasq.d/ip_assignment.conf'
+    
+- name: Create container slab_ironic_dbsync
+  docker_container:
+    name: slab_ironic_dbsync
+    hostname: slab_ironic_dbsync
+    image: "slab_ironic_dbsync"
+    env_file: "{{ ironic_standalone_git_dir }}/docker/config"
+    links:
+      - "slab_rabbit:slab_rabbit"
+      - "slab_mariadb:slab_mariadb"
+
+- name: Create container slab_ironic_api
+  docker_container:
+    name: slab_ironic_api
+    hostname: slab_ironic_api
+    image: "slab_ironic_api"
+    env_file: "{{ ironic_standalone_git_dir }}/docker/config"
+    ports:
+      - '6385:6385'
+    links:
+      - "slab_rabbit:slab_rabbit"
+      - "slab_mariadb:slab_mariadb"
+
+- name: Create container slab_ironic_conductor
+  docker_container:
+    name: slab_ironic_conductor
+    hostname: slab_ironic_conductor
+    image: "slab_ironic_conductor"
+    env_file: "{{ ironic_standalone_git_dir }}/docker/config"
+    ports:
+      - '3260:3260'
+    links:
+      - "slab_rabbit:slab_rabbit"
+      - "slab_mariadb:slab_mariadb"
+    mounts:
+      type: volume
+      target: '/imagedata'
+      source: 'slab_imagedata'
+    
